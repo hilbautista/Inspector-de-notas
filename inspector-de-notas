@@ -1,0 +1,1355 @@
+<?php
+/*
+Plugin Name: Inspector de Notas
+Description: Inspeccionar notas para aprobar o rechazar notas.
+Version: 1.0
+Author: Hilario Bautista
+*/
+
+function agregar_pagina_administracion() {
+    // Agregar la pestaña principal
+    add_menu_page('Inspector de Notas', 'Inspector de Notas', 'manage_options', 'notas-plugin-admin', 'mostrar_pagina_administracion');
+
+    // Agregar la segunda pestaña como subpágina de la principal
+    //add_submenu_page('notas-plugin-admin', 'Inspector de Imagen Destacada', 'Inspector de Imagen Destacada', 'manage_options', 'inspector-imagen-destacada', 'mostrar_pagina_inspector_imagen_destacada');
+	
+	// Agregar la tercera pestaña como subpágina de la principal
+    //add_submenu_page('notas-plugin-admin', 'Tabla de Cambios de Imagen Destacada', 'Tabla de Cambios', 'manage_options', 'tabla-cambios-imagen-destacada', 'mostrar_tabla_cambios_imagen_destacada');
+	
+	// Agregar la pestaña de revisión de notas
+    add_submenu_page('notas-plugin-admin', 'Revisión de Notas', 'Revisión de Notas', 'manage_options', 'revision-notas', 'mostrar_pagina_revision_notas');
+	
+}
+
+add_action('admin_menu', 'agregar_pagina_administracion');
+
+
+
+function mostrar_pagina_revision_notas() {
+		
+    global $wpdb;
+	
+	if (isset($_POST['guardar_cambios'])) {
+        guardar_cambios_revision_notas();
+    }
+
+    // Página actual
+    $pagina_actual = isset($_GET['paged']) ? max(1, absint($_GET['paged'])) : 1;
+
+    // Elementos por página
+    $elementos_por_pagina = 20;
+    $offset = ($pagina_actual - 1) * $elementos_por_pagina;
+
+    // Obtener datos de la tabla wp_revision_notas con paginación
+   $resultados = $wpdb->get_results(
+        $wpdb->prepare(
+            "SELECT * FROM wp_revision_notas where estado_aprobacion = 'por_revisar' ORDER BY id DESC LIMIT %d, %d",
+            $offset,
+            $elementos_por_pagina
+        ),
+        ARRAY_A
+    );
+/*	
+	// Modificar la consulta para obtener dos conjuntos de resultados
+    $consulta_por_revisar = "SELECT * FROM wp_revision_notas WHERE estado_aprobacion = 'por_revisar' ORDER BY id DESC";
+    $consulta_otro_estado = "SELECT * FROM wp_revision_notas WHERE estado_aprobacion != 'por_revisar' ORDER BY id DESC";
+
+    $resultados_por_revisar = $wpdb->get_results($consulta_por_revisar, ARRAY_A);
+    $resultados_otro_estado = $wpdb->get_results($consulta_otro_estado, ARRAY_A);
+
+    // Unir los dos conjuntos de resultados
+    $resultados = array_merge($resultados_por_revisar, $resultados_otro_estado);
+	*/
+ /*	
+	// Modificar la consulta para incluir el filtro por estado de aprobación
+	$consulta = "SELECT * FROM wp_revision_notas ORDER BY id DESC LIMIT %d, %d";
+
+	$resultados = $wpdb->get_results(
+		$wpdb->prepare(
+			$consulta,
+			$offset,
+			$elementos_por_pagina
+		),
+		ARRAY_A
+	);
+*/
+
+
+    // Total de elementos
+    $total_elementos = $wpdb->get_var("SELECT COUNT(id) FROM wp_revision_notas");
+
+    // Total de páginas
+    $total_paginas = ceil($total_elementos / $elementos_por_pagina);
+
+    // Mostrar la interfaz de usuario
+    ?>
+    <div class="wrap">
+        <h2>Revisión de Notas</h2>
+        <form method="post" action="">
+            <table class="widefat">
+                <thead>
+                    <tr>
+                        <th>Título</th>
+                        <th>Autor</th>
+                        <th>Fecha de Publicación</th>
+                        <th>Revisado por</th>
+                        <th>Fecha de Revisión</th>
+                        <th>Estado de Aprobación</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($resultados as $fila) : ?>
+                        <tr>
+                            <td>
+                                <?php
+								// Obtén el enlace al editor de la nota con el atributo target="_blank" para abrir en una nueva pestaña
+								//$link_editor = get_edit_post_link($fila['post_id']);
+								$link_editor = 'https://lanoticia.com/wp-admin/post.php?post='.$fila['post_id'].'&action=edit';
+								//echo $link_editor;
+								//$link_editor = add_query_arg('target', '_blank', $link_editor);
+                                echo '<a href="' . esc_url($link_editor) . '" target="_blank">' . esc_html($fila['titulo']) . '</a>';
+                                ?>
+                            </td>
+                            <td><?php echo esc_html($fila['autor']); ?></td>
+                            <td><?php echo esc_html($fila['fecha_publicacion']); ?></td>
+                            <td><?php echo esc_html($fila['revisado_por']); ?></td>
+                            <td><?php echo esc_html($fila['fecha_revision']); ?></td>
+                            <td>
+                                <label>
+                                    <input type="radio" name="estado_aprobacion[<?php echo esc_attr($fila['post_id']); ?>]" value="aprobado" <?php checked('aprobado', $fila['estado_aprobacion']); ?>>
+                                    Aprobado
+                                </label>
+                                <label>
+                                    <input type="radio" name="estado_aprobacion[<?php echo esc_attr($fila['post_id']); ?>]" value="por_revisar" <?php checked('por_revisar', $fila['estado_aprobacion'] == '' ? 'por_revisar' : $fila['estado_aprobacion']); ?>>
+                                    Por Revisar
+                                </label>
+                                <label>
+                                    <input type="radio" name="estado_aprobacion[<?php echo esc_attr($fila['post_id']); ?>]" value="rechazado" <?php checked('rechazado', $fila['estado_aprobacion']); ?>>
+                                    Rechazado
+                                </label>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+
+            <?php
+            // Paginación
+            $paginacion = paginate_links(
+                array(
+                    'base'      => add_query_arg('paged', '%#%'),
+                    'format'    => '',
+                    'prev_text' => __('&laquo; Anterior'),
+                    'next_text' => __('Siguiente &raquo;'),
+                    'total'     => $total_paginas,
+                    'current'   => $pagina_actual,
+                )
+            );
+
+            if ($paginacion) {
+                echo '<div class="tablenav"><div class="tablenav-pages">' . $paginacion . '</div></div>';
+            }
+            ?>
+
+            <?php submit_button('Guardar Cambios', 'primary', 'guardar_cambios'); ?>
+
+        </form>
+    </div>
+    <?php
+	/*
+	$nombre_tabla = 'wp_revision_notas'; // Reemplaza con el nombre real de tu tabla
+	$columnas = $wpdb->get_results("DESCRIBE $nombre_tabla", ARRAY_A);
+
+	foreach ($columnas as $columna) {
+		echo "Campo: {$columna['Field']}, Tipo: {$columna['Type']}, Clave: {$columna['Key']}<br>";
+	}
+	*/
+	/*
+	//global $wpdb;
+
+	// Dejar vacíos los campos Revisado por y Fecha de revisión
+	//$wpdb->query("UPDATE wp_revision_notas SET estado_aprobacion = 'por_revisar' ");
+	//echo "Listo";
+	*/
+	
+	/*$resultados = $wpdb->get_results("SELECT * FROM wp_revision_notas", ARRAY_A);
+	echo "hola";
+	var_dump($resultados);
+	*/
+}
+
+
+function guardar_cambios_revision_notas() {
+    global $wpdb;
+
+    // Obtener datos del formulario
+    $estado_aprobacion = isset($_POST['estado_aprobacion']) ? $_POST['estado_aprobacion'] : array();
+
+    // Obtener usuario activo
+    $usuario_revisor = get_current_user_id();
+
+	$user_data = get_userdata($usuario_revisor);
+	
+    $author_name = $user_data->display_name; // Obtén el nombre del autor
+
+    // Validar y actualizar el estado de aprobación en la base de datos
+    foreach ($estado_aprobacion as $id_post => $estado) {
+        // Verificar si el estado es uno de los valores permitidos
+        if (in_array($estado, array('aprobado', 'por_revisar', 'rechazado'))) {
+            // Obtener el estado actual de la base de datos para comparar
+            $estado_actual = $wpdb->get_var(
+                $wpdb->prepare("SELECT estado_aprobacion FROM wp_revision_notas WHERE post_id = %d", $id_post)
+            );	
+            // Solo actualizar si el estado actual es diferente del nuevo estado
+            if ($estado_actual !== $estado) {
+				echo "a guardar";
+                $wpdb->update(
+                    'wp_revision_notas',
+                    array(
+                        'estado_aprobacion' => $estado,
+                        'revisado_por'      => $author_name,
+                        'fecha_revision'    => current_time('mysql'),
+                    ),
+                    array('post_id' => $id_post),
+                    array('%s', '%s', '%s'),
+                    array('%d')
+                );
+            }
+        }
+    }
+
+    // Agregar mensaje de éxito
+    add_settings_error('revision_notas', 'success', 'Cambios guardados exitosamente.', 'updated');
+}
+
+
+
+
+
+
+
+
+
+
+function mostrar_tabla_cambios_imagen_destacada() {
+    global $wpdb;
+
+    $tabla_cambios_imagen_destacada = $wpdb->prefix . 'cambios_imagen_destacada';
+	//echo $tabla_cambios_imagen_destacada;
+	//wp_cambios_imagen_destacada
+
+    // Obtener datos de la tabla
+    $resultados = $wpdb->get_results("SELECT * FROM wp_cambios_imagen_destacada", ARRAY_A);
+	
+	//var_dump($resultados);
+
+    echo '<div class="wrap">';
+    echo '<h2>Tabla de Cambios de Imagen Destacada</h2>';
+
+    // Mostrar la tabla HTML
+    echo '<table class="wp-list-table widefat fixed striped">';
+    echo '<thead><tr>';
+    echo '<th>ID</th>';
+    echo '<th>Post ID</th>';
+    echo '<th>Título del Post</th>';
+    echo '<th>URL del Post</th>';
+    echo '<th>Imagen Anterior ID</th>';
+    echo '<th>Imagen Nueva ID</th>';
+    echo '<th>Acción</th>';
+    echo '<th>Quién Hizo la Acción</th>';
+    echo '<th>Fecha de la Acción</th>';
+    echo '</tr></thead>';
+    echo '<tbody>';
+
+    // Mostrar filas de datos
+    foreach ($resultados as $fila) {
+        echo '<tr>';
+        echo '<td>' . esc_html($fila['id']) . '</td>';
+        echo '<td>' . esc_html($fila['post_id']) . '</td>';
+        echo '<td>' . esc_html($fila['titulo_post']) . '</td>';
+        echo '<td>' . esc_html($fila['url_post']) . '</td>';
+        echo '<td>' . esc_html($fila['imagen_anterior_id']) . '</td>';
+        echo '<td>' . esc_html($fila['imagen_nueva_id']) . '</td>';
+        echo '<td>' . esc_html($fila['accion']) . '</td>';
+        echo '<td>' . esc_html($fila['quien_hizo_accion']) . '</td>';
+        echo '<td>' . esc_html($fila['fecha_accion']) . '</td>';
+        echo '</tr>';
+    }
+
+    echo '</tbody></table>';
+    echo '</div>';
+}
+
+
+
+
+
+
+
+
+// Función para mostrar la página de Inspector de Imagen Destacada
+function mostrar_pagina_inspector_imagen_destacada() {
+    // Obtener el número de página actual
+    $page = isset($_GET['paged']) ? intval($_GET['paged']) : 1;
+    $notas_por_pagina = 10;
+
+    // Calcular el número de notas para omitir
+    $offset = ($page - 1) * $notas_por_pagina;
+
+    // Obtener los valores de los filtros
+    $autor_filtro = isset($_GET['autor_filtro']) ? intval($_GET['autor_filtro']) : 0;
+    $fecha_filtro = isset($_GET['fecha_filtro']) ? sanitize_text_field($_GET['fecha_filtro']) : '';
+
+    // Obtener la lista de meses con notas
+    $meses_con_notas = obtener_meses_con_notas();
+	
+	
+    // Mostrar contenedor para detalles de la imagen destacada
+    echo '<div id="imagen-destacada-detalles-container"></div>';
+	
+	// Agregar el formulario de búsqueda
+    echo '<form method="get">';
+    //echo '<label for="buscar_notas">Buscar Notas: </label>';
+    echo '<input type="text" id="buscar_notas" placeholder="Palabra clave" name="buscar_notas" value="' . esc_attr($_GET['buscar_notas']) . '">';
+    
+
+    // Agregar el filtro por autor
+    //echo '<label for="autor_filtro">Autor: </label>';
+    echo '<select id="autor_filtro" name="autor_filtro">';
+    echo '<option value="0">Todos los autores</option>';
+
+    // Obtener lista de autores
+    $autores = get_users();
+    foreach ($autores as $autor) {
+        echo '<option value="' . $autor->ID . '" ' . selected($autor_filtro === $autor->ID, true, false) . '>' . $autor->display_name . '</option>';
+    }
+
+    echo '</select>';
+
+    // Agregar el filtro por fecha
+    //echo '<label for="fecha_filtro">Fecha: </label>';
+    echo '<select id="fecha_filtro" name="fecha_filtro">';
+    echo '<option value="">Todas</option>';
+
+    foreach ($meses_con_notas as $mes) {
+        $year = $mes->year;
+        $month = $mes->month;
+        $month_name = date("F", mktime(0, 0, 0, $month, 1, $year));
+
+        echo '<option value="' . $year . '' . $month . '" ' . selected($fecha_filtro === $year . '' . $month, true, false) . '>' . $month_name . ' ' . $year . '</option>';
+    }
+
+    echo '</select>';
+
+    // Agregar el parámetro 
+    echo '<input type="hidden" name="page" value="inspector-imagen-destacada">';
+
+    echo '<input type="submit" class="button" value="Filtrar">';
+    echo '</form>';
+
+    // Mostrar tabla de notas
+	echo '<form method="post">';
+	echo '<table class="wp-list-table widefat fixed striped">';
+	echo '<thead><tr><th>Título</th><th>Autor</th><th>Fecha de Publicación</th></tr></thead>';
+	echo '<tbody>';
+
+	// Consulta para obtener notas con paginación y filtros	
+	$args = array(
+        'post_type'      => 'post',
+        'posts_per_page' => $notas_por_pagina,
+        'offset'         => $offset,
+        'orderby'        => 'date',
+        'order'          => 'DESC',
+        's'              => sanitize_text_field($_GET['buscar_notas']), // Agregar búsqueda
+    );
+
+	// Agregar filtro por autor si se selecciona
+	if ($autor_filtro > 0) {
+		$args['author'] = $autor_filtro;
+	}
+
+	// Agregar filtro por fecha si se selecciona
+	if (!empty($fecha_filtro)) {
+		$date_query = array(
+			array(
+				'year' => substr($fecha_filtro, 0, 4),
+				'month' => substr($fecha_filtro, 4, 2),
+			),
+		);
+		$args['date_query'] = $date_query;
+	}
+
+	$notas = new WP_Query($args);
+	
+	// Script JavaScript para manejar el contenedor de detalles de la imagen destacada y AJAX
+	echo '<script>
+		function mostrarImagenDestacada(notaId) {
+			// Realizar una solicitud AJAX para obtener detalles de la imagen destacada
+			jQuery.ajax({
+				url: "' . admin_url('admin-ajax.php') . '",
+				type: "post",
+				data: {
+					action: "obtener_detalles_imagen_destacada",
+					post_id: notaId,
+				},
+				success: function(response) {
+					// Llena el contenedor de detalles de la imagen destacada con la respuesta
+					jQuery("#imagen-destacada-detalles-container").html(response);
+
+					// Agregar el botón de guardar
+					//jQuery("#attachment-info").append("<button style=\'float:right\' class=\'button action\' id=\'guardar-detalles-imagen\' onclick=\'guardarDetallesImagen(" + notaId + ")\' >Guardar</button>");
+					
+					// Agregar el botón de reemplazar imagen
+					jQuery("#actions").append("<label for=\'eliminar-imagen-checkbox\' id=\'eliminar-imagen-checkbox-label\'>Eliminar</label>");
+					jQuery("#actions").append("<input type=\'checkbox\' id=\'eliminar-imagen-checkbox\' name=\'eliminar_imagen\'>");
+    				jQuery("#actions").append("<button class=\'button action\' id=\'reemplazar-imagen\' onclick=\'reemplazarImagen(" + notaId + ")\' >Reemplazar Imagen</button>");
+					
+					var divSettings = jQuery("#attachment-info");
+					var notasRelacionadas = jQuery("#notas-relacionadas");
+					divSettings.append(notasRelacionadas);
+					
+				},
+			});
+		}
+				
+		function reemplazarImagen(notaId) {
+			var eliminarImagen = jQuery("#eliminar-imagen-checkbox").prop("checked");
+
+			// Abre la ventana de selección de medios de WordPress
+			var frame = wp.media({
+				title: "Seleccionar nueva imagen destacada",
+				multiple: false,
+				library: { type: "image" },
+				button: { text: "Usar esta imagen" },
+			});
+
+			// Maneja la selección de la nueva imagen
+			frame.on("select", function () {
+				var attachment = frame.state().get("selection").first().toJSON();
+
+				// Realiza una solicitud AJAX para reemplazar o eliminar la imagen destacada
+				jQuery.ajax({
+					url: "' . admin_url('admin-ajax.php') . '",
+					type: "post",
+					data: {
+						action: "reemplazar_imagen_destacada",
+						post_id: notaId,
+						imagen_id: attachment.id,
+						eliminar_imagen: eliminarImagen,
+					},
+					success: function (response) {
+						// Elimina la vista de la imagen destacada anterior
+						jQuery("#imagen-destacada-detalles-container").empty();
+
+						// Actualiza la vista de la nueva imagen destacada
+						jQuery("#imagen-destacada-detalles-container").html(response);
+					},
+				});
+			});
+
+			// Abre la ventana de selección de medios
+			frame.open();
+		}
+
+
+
+	</script>';
+	
+	
+    echo '<script>
+        jQuery(document).ready(function() {
+            // Mostrar automáticamente la imagen destacada del primer elemento al cargar la página
+            var primerNotaId = jQuery(".nota-link").first().data("nota-id");
+            mostrarImagenDestacada(primerNotaId);
+        });
+
+        // Función para guardar detalles de la imagen destacada
+		function guardarDetallesImagen(notaId) {
+			var altText = jQuery("#alt-text").val();
+			var tituloImagen = jQuery("#titulo-imagen").value;
+			var descripcionImagen = jQuery("#descripcion-imagen").val();
+			var textoImagen = jQuery("#texto-imagen").val();
+			
+			// Elimina el botón de reemplazar imagen si existe
+    		//jQuery("#reemplazar-imagen").remove();
+
+			// Verificar si algún campo obligatorio está vacío
+			if (!altText || !descripcionImagen || !textoImagen) {
+				alert("Todos los campos son obligatorios. Por favor, complete todos los campos antes de guardar.");
+				return;
+			}
+
+			// Realizar una solicitud AJAX para guardar los detalles de la imagen destacada
+			jQuery.ajax({
+				url: "' . admin_url('admin-ajax.php') . '",
+				type: "post",
+				data: {
+					action: "guardar_detalles_imagen_destacada",
+					post_id: notaId,
+					alt_text: altText,
+					titulo_imagen: tituloImagen,
+					descripcion_imagen: descripcionImagen,
+					texto_imagen: textoImagen,
+				},
+				success: function(response) {
+					// Realizar acciones adicionales después de guardar, si es necesario
+					alert("Detalles de la imagen guardados correctamente.");
+
+					// Actualizar los valores en el contenedor de detalles
+					jQuery("#imagen-destacada-detalles-container").html(response);
+				},
+			});
+		}
+
+    </script>';
+
+    // Verificar si hay notas
+	if ($notas->have_posts()) {
+		// Dentro de la sección que muestra las notas en la tabla
+		while ($notas->have_posts()) {
+			$notas->the_post();
+			$nota_id = get_the_ID();
+			$autor_id = get_the_author_meta('ID');
+			$fecha_publicacion = get_the_date();
+
+			// Obtener datos de SEO de la imagen
+			$alt_text = get_post_meta($nota_id, '_wp_attachment_image_alt', true);
+
+			// Mantener el título como enlace y llamar a la función al hacer clic
+			echo '<tr>';
+			echo '<td class="title column-title has-row-actions column-primary page-title">';
+			echo '<a class="nota-link" href="javascript:void(0);" onclick="mostrarImagenDestacada(' . $nota_id . ')" data-nota-id="' . $nota_id . '">' . destacar_titulo($_GET['buscar_notas'], get_the_title()) . '</a>';
+			echo '</td>';
+			echo '<td>' . get_the_author() . '</td>';
+			echo '<td>' . $fecha_publicacion . '</td>';
+			echo '</tr>';
+		}
+	} else {
+		echo '<tr><td colspan="3">No se encontraron notas.</td></tr>';
+	}
+	
+    echo '</tbody>';
+    echo '</table>';
+    echo '</form>';
+	
+	
+	
+	/*
+	// Registra la acción en la nueva tabla
+        global $wpdb;
+        $revision_notas = $wpdb->prefix . 'revision_notas';
+		
+		// Realiza una consulta para verificar la existencia de la tabla
+		$query = $wpdb->prepare("SHOW TABLES LIKE %s", $revision_notas);
+		$resultado = $wpdb->get_var($query);
+
+		if ($resultado !== $revision_notas) {
+			// La tabla no existe, entonces la creamos
+
+			$charset_collate = $wpdb->get_charset_collate();
+
+			 $sql = "CREATE TABLE $revision_notas (
+				id INT AUTO_INCREMENT PRIMARY KEY,
+				post_id INT NOT NULL,
+				titulo VARCHAR(255) NOT NULL,
+				autor VARCHAR(100) NOT NULL,
+				fecha_publicacion DATE NOT NULL,
+				revisado_por VARCHAR(100),
+				fecha_revision DATE,
+				estado_aprobacion VARCHAR(20) NOT NULL
+			) $charset_collate;";
+
+
+			require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
+			dbDelta($sql);
+
+			echo 'La tabla ha sido creada.';
+		} else {
+
+				echo 'La tabla ya existe.';
+			}
+
+
+    // Iterar sobre las URLs y obtener los datos.
+$urls = array(
+);
+
+foreach ($urls as $url) {
+    // Obtener el ID de la entrada (post) a partir de la URL.
+    $post_id = url_to_postid($url);
+
+    // Verificar si la entrada existe.
+    if ($post_id) {
+        // Obtener datos de la entrada.
+        $titulo = get_the_title($post_id);
+        $autor = get_the_author_meta('display_name', get_post_field('post_author', $post_id));
+        $fecha_publicacion = get_the_date('Y-m-d', $post_id);
+
+        / Puedes imprimir o retornar los datos según tus necesidades.
+        echo "Título: $titulo<br>";
+        echo "Autor: $autor<br>";
+        echo "Fecha de Publicación: $fecha_publicacion<br>";*/
+		
+		//echo "('$post_id','$titulo', '$autor', '$fecha_publicacion', ' ', ' ', 'Por revisar'),";
+
+
+        // Insertar los datos en la tabla personalizada de WordPress.
+        // 
+        /*/ 
+        global $wpdb;
+        $wpdb->insert(
+            wp_revision_notas,
+            array(
+                'post_id' => $post_id,
+                'titulo' => $titulo,
+                'autor' => $autor,
+				'fecha_publicacion' => $fecha_publicacion,
+                'revisado_por' => 'No revisado',
+                'fecha_revision' => $fecha_publicacion,
+                'estado_aprobacion' => 'Por revisar'
+            )
+        );
+
+    } else {
+        echo "No se encontró la entrada para la URL: $url<br>";
+    }
+     
+}  */ 
+
+
+/*$resultados = $wpdb->get_results("SELECT * FROM wp_revision_notas", ARRAY_A);
+	echo "hola";
+	var_dump($resultados);
+*/
+
+	
+	
+	/*
+	// Supongamos que tienes un array de URLs
+$urls = array(
+    '/astrologia/en-abril-llega-el-primer-eclipse-del-ano-cuando-seran-los-eclipses-del-2022/',
+    '/astrologia/horoscopo-de-la-semana-11-al-17-de-abril/',
+    '/astrologia/horoscopo-de-la-semana-25-de-abril-al-02-de-mayo/',
+    '/astrologia/horoscopo-de-la-semana-28-de-marzo-al-3-de-abril/',
+    '/astrologia/horoscopo-de-la-semana-4-al-10-de-abril/',
+    '/astrologia/que-dice-tu-horoscopo-de-la-semana-03-al-09-de-mayo/',
+    '/astrologia/que-revela-tu-horoscopo-de-la-semana-10-al-16-de-mayo/',
+    '/astrologia/tu-horoscopo-de-la-semana-del-21-al-27-de-marzo/',
+    '/celebraciones/bebe-muestra-tierna-reaccion-mientras-lo-masajean/',
+    '/celebraciones/captan-en-vivo-cuando-pastor-insultar-a-su-esposa-justo-antes-de-un-culto/',
+    '/celebraciones/celebran-a-una-radiante-y-elegante-quinceanera/',
+    '/celebraciones/celebran-bautizo/',
+    '/celebraciones/celebran-la-navidad-con-ninos-del-grupo-esperanza-de-vida/',
+    '/celebraciones/celebran-sus-dulces-16-anos/',
+    '/celebraciones/cientos-de-ninos-reciben-una-navidad-muy-alegre/',
+    '/celebraciones/como-una-pareja-guatemalteca-encontro-la-sanacion-en-el-baile/',
+    '/celebraciones/cual-es-el-significado-del-arbol-de-navidad/',
+    '/celebraciones/cuando-es-el-dia-de-los-abuelos-en-mexico-2020/',
+    '/celebraciones/cuando-se-celebra-el-dia-de-la-industria/',
+    '/celebraciones/cuando-se-conmemora-el-dia-internacional-de-la-alfabetizacion/',
+    '/celebraciones/cuando-se-conmemora-el-dia-internacional-de-los-animales-sin-hogar/'
+);
+
+	// Recorre cada URL y obtén el ID del post
+	foreach ($urls as $url) {
+		$post_id = url_to_postid($url);
+
+		// Imprime el resultado
+		//echo "La URL: $url tiene el ID del post: $post_id <br>";
+		echo "https://lanoticia.com/wp-admin/post.php?post=$post_id&action=edit&target=_blank <br>";
+	}
+	*/
+	
+}
+
+
+// Función para resaltar los términos de búsqueda en el título
+function destacar_titulo($search_terms, $title) {
+    if (!empty($search_terms)) {
+        $title = preg_replace('/(' . implode('|', array_map('preg_quote', explode(' ', $search_terms))) . ')/i', '<strong>$1</strong>', $title);
+    }
+    return $title;
+}
+
+// Agregar acción AJAX para obtener detalles de la imagen destacada
+add_action('wp_ajax_obtener_detalles_imagen_destacada', 'obtener_detalles_imagen_destacada');
+
+function obtener_detalles_imagen_destacada() {
+    $post_id = $_POST['post_id'];
+
+    // Obtener ID de la imagen destacada asociada a la nota
+    $imagen_destacada_id = get_post_thumbnail_id($post_id);
+    $imagen_destacada_info = wp_get_attachment_metadata($imagen_destacada_id);
+	$author_id = get_post_field('post_author', $imagen_destacada_id);
+	
+    // Mostrar la información de la imagen destacada
+    if ($imagen_destacada_info) {
+        $subido_por = get_the_author_meta('display_name', $author_id);
+        $nombre_archivo = basename(get_attached_file($imagen_destacada_id));
+        $tipo_archivo = get_post_mime_type($imagen_destacada_id);
+        $tamano_archivo = size_format(filesize(get_attached_file($imagen_destacada_id)));
+        $dimensiones = $imagen_destacada_info['width'] . ' x ' . $imagen_destacada_info['height'];
+    }
+
+    // Obtener detalles de la imagen destacada del post
+    $imagen_destacada = get_the_post_thumbnail_url($post_id, 'full');
+    $fecha_publicacion = get_the_date('', $post_id);
+    $autor = get_the_author_meta('display_name', get_post_field('post_author', $post_id));
+
+    // Obtener datos de SEO de la imagen destacada
+    $alt_text = get_post_meta($imagen_destacada_id, '_wp_attachment_image_alt', true);
+    //$titulo_imagen = get_post_meta($imagen_destacada_id, '_wp_attachment_image_title', true);
+	$titulo_imagen = get_the_title($imagen_destacada_id);
+    //$descripcion_imagen = get_post_meta($imagen_destacada_id, '_wp_attachment_image_caption', true);
+	$texto_imagen = wp_get_attachment_caption( $imagen_destacada_id );
+	//$descripcion_imagen = wp_get_attachment( $imagen_destacada_id );
+	//echo $imagen_destacada;
+	//
+
+	// Utiliza la ID de la imagen destacada para obtener las entradas relacionadas
+	$entradas_relacionadas = get_posts(array(
+		'post_type' => 'post',  // Puedes ajustar esto según el tipo de publicaciones que estás buscando
+		'meta_query' => array(
+			array(
+				'key' => '_thumbnail_id',
+				'value' => $imagen_destacada_id,
+				'compare' => '='
+			)
+		),
+		'fields' => 'ids'  // Esto obtendrá solo las ID de las entradas
+	));
+	
+    $descripcion_imagen = get_post_meta($imagen_destacada_id, '_wp_attachment_image_description', true);
+	$detalle_imagen_html = '
+			<div class="attachment-details save-ready">
+				<div class="attachment-media-view landscape">
+					<h2 class="screen-reader-text">Vista Previa del Adjunto</h2>
+					<div class="thumbnail thumbnail-image">
+						<img class="details-image" src="' . $imagen_destacada . '" draggable="false" alt="">
+						<div class="actions" id="actions">
+							
+						</div>
+					</div>
+					
+				</div>
+
+				<div class="attachment-info" id="attachment-info">
+				    <div class="details">
+						<h2 class="screen-reader-text">
+							Detalles </h2>
+						<div class="uploaded"><strong>Subido el:</strong> '. get_the_date('Y/m/d H:i:s', $imagen_destacada_id) .'</div>
+						<div class="uploaded-by"><strong>Subido por:</strong> ' . esc_html($subido_por) . '</div>
+						<div class="filename"><strong>Nombre de archivo:</strong> ' . esc_html($nombre_archivo) . '</div>
+						<div class="file-type"><strong>Tipo de archivo:</strong> ' . esc_html($tipo_archivo) . '</div>
+						<div class="file-size"><strong>Tamaño de archivo:</strong> ' . esc_html($tamano_archivo) . '</div>
+						<div class="dimensions"><strong>Dimensiones:</strong> ' . esc_html($dimensiones) . '</div>
+						<a href="' . $imagen_destacada . '" download="">Descargar archivo</a>
+					</div>
+					<div class="settings">
+						<span class="setting alt-text has-description" data-setting="alt">
+							<label for="attachment-details-two-column-alt-text" class="name">Texto alternativo</label>
+							<textarea id="alt-text" disabled>' . esc_textarea($alt_text) . '</textarea>
+						</span>
+						<span class="setting" data-setting="title">
+							<label for="attachment-details-two-column-title" class="name">Título</label>
+							<input type="text" id="titulo-imagen" disabled value="' . esc_textarea($titulo_imagen) . '">
+						</span>
+
+						<span class="setting" data-setting="caption">
+							<label for="attachment-details-two-column-caption" class="name">Leyenda</label>
+							<textarea id="texto-imagen" disabled>' . esc_textarea($texto_imagen) . '</textarea>
+						</span>
+						<span class="setting" data-setting="description">
+							<label for="attachment-details-two-column-description" class="name">Descripción</label>
+							<textarea id="descripcion-imagen" disabled>' . esc_textarea($descripcion_imagen) . '</textarea>
+						</span>
+					</div>
+				</div>
+			</div>	
+	';
+	
+	echo '
+		<style>
+		    #imagen-destacada-detalles-container{
+				padding:20px;
+			}
+			
+			.attachment-media-view {
+				float: left;
+				width: 65%;
+				height: 100%;
+			}
+			
+			.attachment-info {
+				overflow: auto;
+				box-sizing: border-box;
+				margin-bottom: 0;
+				padding: 12px 16px 0;
+				width: 35%;
+				height: 100%;
+				box-shadow: inset 0 4px 4px -4px rgba(0,0,0,.1);
+				border-bottom: 0;
+				border-left: 1px solid #dcdcde;
+				background: #f6f7f7
+			}
+
+			
+			.attachment-media-view .details-image {
+				display: block;
+				margin: 0 auto 16px;
+				max-width: 100%;
+				max-height: 90%;
+				max-height: calc(100% - 42px);
+				background-position: 0 0,10px 10px;
+				background-size: 20px 20px;
+			}
+			
+			div#attachment-info{
+				text-align: right;
+			}
+			
+			.attachment-info .details {
+				float: right;
+				font-size: 12px;
+				max-width: 100%
+			}
+			
+			.notas-relacionadas{
+				margin: 10px 0;
+			}
+			
+			.wp-core-ui .button, .wp-core-ui .button-secondary {
+				color: #2271b1;
+				border-color: #2271b1;
+				background: #f6f7f7;
+				vertical-align: top;
+			}
+			
+			.wp-core-ui .button, .wp-core-ui .button-primary, .wp-core-ui .button-secondary {
+				display: inline-block;
+				text-decoration: none;
+				font-size: 13px;
+				line-height: 2.15384615;
+				min-height: 30px;
+				margin: 0;
+				padding: 0 10px;
+				cursor: pointer;
+				border-width: 1px;
+				border-style: solid;
+				-webkit-appearance: none;
+				border-radius: 3px;
+				white-space: nowrap;
+				box-sizing: border-box;
+			}
+			
+			.actions{
+				text-align: center;
+			}
+			
+			@media screen and (max-width: 782px){
+				input#buscar_notas{
+					max-width: 25rem;
+    				width: 100%;
+				}
+				select#autor_filtro, select#fecha_filtro {
+					width: 100%;
+				}
+				table.wp-list-table.widefat.fixed.striped {
+					width: 98%;
+				}
+			}
+
+			
+			@media only screen and (max-width: 480px) {
+				.media-frame-title {
+					right:110px
+				}
+
+				.edit-media-header .left, .edit-media-header .right,.upload-php .media-modal-close {
+					width: 40px;
+					height: 40px
+				}
+
+				.edit-media-header .left:before,.edit-attachment-frame .edit-media-header .right:before {
+					line-height: 40px!important
+				}.attachment-media-view {
+					float: none;
+					height: auto;
+					width: 100%
+				}
+
+				.attachment-info {
+					height: auto;
+					width: 100%
+				}
+			}
+
+		</style>
+	';
+    
+    echo $detalle_imagen_html;
+	
+	// Mostrar automáticamente las notas vinculadas
+    echo '<table class="wp-list-table widefat fixed striped notas-relacionadas" id="notas-relacionadas">';
+	echo '<thead><tr><th>Notas relacionadas</th></tr></thead>';
+	echo '<tbody>';
+	// Obtén los títulos de las entradas relacionadas
+	$titulos_relacionados = array();
+	$cuenta_entradas=0;
+	foreach ($entradas_relacionadas as $entrada_id) {
+		echo '<tr>';
+		echo '<td class="title column-title has-row-actions column-primary page-title">';
+		echo '<a class="nota-link" href="javascript:void(0);" onclick="mostrarImagenDestacada(' . $entrada_id . ')" data-nota-id="' . $entrada_id . '">' . get_the_title($entrada_id) . '</a>';
+		echo '</td>';
+		echo '</tr>';
+		$cuenta_entradas++;
+	}
+	echo '</tbody>';
+    echo '</table>';
+	
+	if($cuenta_entradas>1){
+		echo '<script>
+			jQuery(document).ready(function() {
+				// Habilitar o deshabilitar el checkbox según el número de notas asignadas
+				document.getElementById("eliminar-imagen-checkbox-label").style.display = "none";
+				document.getElementById("eliminar-imagen-checkbox").style.display = "none";
+			});
+		</script>';
+	}
+
+    wp_die();
+}
+
+// Agregar acción AJAX para guardar detalles de la imagen destacada
+add_action('wp_ajax_guardar_detalles_imagen_destacada', 'guardar_detalles_imagen_destacada');
+
+function guardar_detalles_imagen_destacada() {
+    $post_id = $_POST['post_id'];
+    $alt_text = sanitize_text_field($_POST['alt_text']);
+    $titulo_imagen = sanitize_text_field($_POST['titulo_imagen']);
+    $descripcion_imagen = sanitize_text_field($_POST['descripcion_imagen']);
+    $texto_imagen = sanitize_text_field($_POST['texto_imagen']);
+	//echo $texto_imagen;
+	
+	$imagen_destacada_id = get_post_thumbnail_id($post_id);
+		
+	// Obtener la información actual de la imagen destacada
+	//$attachment = get_post($imagen_destacada_id);
+
+	// Actualizar la descripción de la imagen
+	//$attachment->post_excerpt = $texto_imagen;
+	
+	// Guardar los cambios
+	//wp_update_post($attachment);
+	
+    // Actualizar detalles de la imagen destacada
+    update_post_meta($imagen_destacada_id, '_wp_attachment_image_alt', $alt_text);
+    update_post_meta($imagen_destacada_id, '_wp_attachment_image_title', $titulo_imagen);
+    update_post_meta($imagen_destacada_id, '_wp_attachment_image_caption', $texto_imagen);
+    update_post_meta($imagen_destacada_id, '_wp_attachment_image_description', $descripcion_imagen);
+
+    // Importante: detener la ejecución de WordPress para evitar la salida adicional
+    wp_die();
+}
+
+// Agregar acción AJAX para reemplazar la imagen destacada
+add_action('wp_ajax_reemplazar_imagen_destacada', 'reemplazar_imagen_destacada');
+
+function reemplazar_imagen_destacada() {
+    // Verifica si se recibieron los parámetros necesarios
+    if (isset($_POST['post_id']) && isset($_POST['imagen_id'])) {
+        $post_id = intval($_POST['post_id']);
+        $imagen_id = intval($_POST['imagen_id']);
+        $eliminar_imagen = isset($_POST['eliminar_imagen']) && $_POST['eliminar_imagen'] === 'true';
+        // Obtener la información necesaria
+        $titulo_post = get_the_title($post_id);
+        $url_post = get_permalink($post_id);
+        $quien_hizo_accion = get_current_user_id();
+        $fecha_accion = current_time('mysql');
+
+
+        // Elimina la imagen destacada anterior si se selecciona la opción de eliminar
+        if ($eliminar_imagen) {
+            eliminar_imagen_destacada_anterior($post_id);
+            $accion = 'Eliminar';
+        } else {
+            $accion = 'Reemplazar';
+        }
+
+
+        // Registra la acción en la nueva tabla
+        global $wpdb;
+        $tabla_cambios_imagen_destacada = $wpdb->prefix . 'cambios_imagen_destacada';
+		
+		// Realiza una consulta para verificar la existencia de la tabla
+		$query = $wpdb->prepare("SHOW TABLES LIKE %s", $tabla_cambios_imagen_destacada);
+		$resultado = $wpdb->get_var($query);
+
+		if ($resultado !== $tabla_cambios_imagen_destacada) {
+			// La tabla no existe, entonces la creamos
+
+			$charset_collate = $wpdb->get_charset_collate();
+
+			 $sql = "CREATE TABLE $tabla_cambios_imagen_destacada (
+				id INT NOT NULL AUTO_INCREMENT,
+				post_id INT NOT NULL,
+				titulo_post VARCHAR(255) NOT NULL,
+				url_post VARCHAR(255) NOT NULL,
+				imagen_anterior_id INT,
+				imagen_nueva_id INT,
+				accion VARCHAR(20) NOT NULL,
+				quien_hizo_accion VARCHAR(100) NOT NULL,
+				fecha_accion DATETIME NOT NULL,
+				PRIMARY KEY (id)
+			) $charset_collate;";
+
+			require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
+			dbDelta($sql);
+
+			echo 'La tabla ha sido creada.';
+		} else {
+
+				echo 'La tabla ya existe.';
+			}
+		
+		//echo $tabla_cambios_imagen_destacada;
+
+        $wpdb->insert(
+            $tabla_cambios_imagen_destacada,
+            array(
+                'post_id' => $post_id,
+                'titulo_post' => $titulo_post,
+                'url_post' => $url_post,
+				'imagen_anterior_id' => $eliminar_imagen ? $imagen_id : null,
+                'imagen_nueva_id' => $eliminar_imagen ? null : $imagen_id,
+                'accion' => $accion,
+                'quien_hizo_accion' => $quien_hizo_accion,
+                'fecha_accion' => $fecha_accion,
+            ),
+           	array('%d', '%s', '%s', '%d', '%d', '%s', '%s', '%s')
+        );
+
+        // Establece la nueva imagen como destacada
+        set_post_thumbnail($post_id, $imagen_id);
+
+        echo 'Imagen ' . ($eliminar_imagen ? 'eliminada' : 'reemplazada') . ' con éxito';
+    } else {
+        // Devuelve un mensaje de error si faltan parámetros
+        echo 'Error: Parámetros insuficientes';
+		// O, en caso de error
+		//wp_send_json_error('Error: Parámetros insuficientes');
+
+    }
+
+    // Importante: detener la ejecución de WordPress para evitar la salida adicional
+    wp_die();
+}
+
+
+
+// Función para eliminar la imagen destacada anterior
+function eliminar_imagen_destacada_anterior($imagen_destacada_id) {
+    // Obtiene la ID de la imagen destacada anterior
+    $imagen_destacada_anterior_id = get_post_thumbnail_id($imagen_destacada_id);
+
+    // Verifica si hay una imagen destacada anterior
+    if (!empty($imagen_destacada_anterior_id) && $imagen_destacada_anterior_id !== $imagen_destacada_id) {
+        // Elimina permanentemente la imagen destacada anterior
+        wp_delete_attachment($imagen_destacada_anterior_id, true);
+    }
+}
+
+
+function obtener_meses_con_notas() {
+    global $wpdb;
+
+    $query = $wpdb->prepare(
+        "SELECT DISTINCT YEAR(post_date) AS year, MONTH(post_date) AS month 
+        FROM $wpdb->posts 
+        WHERE post_type = 'post' AND post_status = 'publish' 
+        ORDER BY post_date DESC"
+    );
+
+    $results = $wpdb->get_results($query);
+
+    return $results;
+}
+
+
+// Mostrar página de administración
+function mostrar_pagina_administracion() {
+    // Obtener el número de página actual
+    $page = isset($_GET['paged']) ? intval($_GET['paged']) : 1;
+    $notas_por_pagina = 20;
+
+    // Calcular el número de notas para omitir
+    $offset = ($page - 1) * $notas_por_pagina;
+
+    // Obtener los valores de los filtros
+    $estado_filtro = isset($_GET['estado_filtro']) ? sanitize_text_field($_GET['estado_filtro']) : '';
+    $autor_filtro = isset($_GET['autor_filtro']) ? intval($_GET['autor_filtro']) : 0;
+
+    // Obtener los valores de los filtros
+    $fecha_filtro = isset($_GET['fecha_filtro']) ? sanitize_text_field($_GET['fecha_filtro']) : '';
+
+    // Obtener la lista de meses con notas
+    $meses_con_notas = obtener_meses_con_notas();
+
+    // Agregar el filtro por estado de aprobación
+    echo '<form method="get">';
+    echo '<label for="estado_filtro">Estado de Aprobación: </label>';
+    echo '<select id="estado_filtro" name="estado_filtro">';
+    echo '<option value="">Todos los estados</option>';
+    echo '<option value="aprobado" ' . selected($estado_filtro === 'aprobado', true, false) . '>Aprobado</option>';
+    echo '<option value="rechazado" ' . selected($estado_filtro === 'rechazado', true, false) . '>Rechazado</option>';
+    echo '<option value="no_revisado" ' . selected($estado_filtro === 'no_revisado', true, false) . '>Por revisar</option>';
+    echo '</select>';
+
+
+    // Agregar el filtro por autor
+    echo '<label for="autor_filtro">Autor: </label>';
+    echo '<select id="autor_filtro" name="autor_filtro">';
+    echo '<option value="0">Todos los autores</option>';
+
+    // Obtener lista de autores
+    $autores = get_users();
+    foreach ($autores as $autor) {
+        echo '<option value="' . $autor->ID . '" ' . selected($autor_filtro === $autor->ID, true, false) . '>' . $autor->display_name . '</option>';
+    }
+
+    echo '</select>';
+
+    // Agregar el filtro por fecha
+    echo '<label for="fecha_filtro">Fecha: </label>';
+    echo '<select id="fecha_filtro" name="fecha_filtro">';
+    echo '<option value="">Todas</option>';
+
+    foreach ($meses_con_notas as $mes) {
+        $year = $mes->year;
+        $month = $mes->month;
+        $month_name = date("F", mktime(0, 0, 0, $month, 1, $year));
+
+        echo '<option value="' . $year . '' . $month . '" ' . selected($fecha_filtro === $year . '' . $month, true, false) . '>' . $month_name . ' ' . $year . '</option>';
+    }
+
+    echo '</select>';
+
+    // Agregar el parámetro page=notas-plugin-admin
+    echo '<input type="hidden" name="page" value="notas-plugin-admin">';
+
+    echo '<input type="submit" class="button" value="Filtrar">';
+    echo '</form>';
+
+    // Mostrar tabla de notas
+    echo '<form method="post">';
+    echo '<table class="wp-list-table widefat fixed striped">';
+    echo '<thead><tr><th>Título</th><th>Autor</th><th>Fecha de Publicación</th><th>Inspeccionado por:</th><th>Fecha de Revisión</th><th>Estado de Aprobación</th></tr></thead>';
+    echo '<tbody>';
+
+
+    // Consulta para obtener notas con paginación y filtros
+	$args = array(
+		'post_type' => 'post',
+		'posts_per_page' => $notas_por_pagina,
+		'offset' => $offset,
+		'orderby' => 'date',
+		'order' => 'DESC',
+	);
+
+    // Agregar filtro por estado de aprobación si se selecciona
+    if (!empty($estado_filtro)) {		
+		if ($estado_filtro === 'no_revisado') {
+			$args['meta_query'] = array(
+				'relation' => 'OR',
+				array(
+					'key' => '_estado_aprobacion',
+					'value' => 'no_revisado',
+					'compare' => '=',
+				),
+				array(
+					'key' => '_estado_aprobacion',
+					'value' => '',
+					'compare' => '=',
+				),
+				array(
+					'key' => '_estado_aprobacion',
+					'compare' => 'NOT EXISTS',
+				),
+			);
+		}else{
+			$args['meta_query'] = array(
+				array(
+					'key' => '_estado_aprobacion',
+					'value' => $estado_filtro,
+				),
+			);
+		}
+		var_dump($args['meta_query']);
+    }
+
+    // Agregar filtro por autor si se selecciona
+    if ($autor_filtro > 0) {
+        $args['author'] = $autor_filtro;
+    }
+
+    // Agregar filtro por fecha si se selecciona
+    if (!empty($fecha_filtro)) {
+        $date_query = array(
+            array(
+                'year' => substr($fecha_filtro, 0, 4),
+                'month' => substr($fecha_filtro, 4, 2),
+            ),
+        );
+        $args['date_query'] = $date_query;
+    }
+
+    $notas = new WP_Query($args);
+
+    while ($notas->have_posts()) {
+        $notas->the_post();
+        $nota_id = get_the_ID();
+        $autor_id = get_the_author_meta('ID');
+        $estado_aprobacion = get_post_meta($nota_id, '_estado_aprobacion', true);
+        $usuario_aprobador_rechazador = get_post_meta($nota_id, '_usuario_aprobador_rechazador', true);
+        $fecha_publicacion = get_the_date();
+    
+        // Obtén el enlace al editor de la nota con el atributo target="_blank" para abrir en una nueva pestaña
+        $editor_link = get_edit_post_link($nota_id);
+        $editor_link = add_query_arg('target', '_blank', $editor_link);
+    
+        // Determinar la clase de estilo en función del estado
+        $fila_clase = '';
+        if ($estado_aprobacion === 'aprobado') {
+            $fila_clase = 'aprobado';
+        } elseif ($estado_aprobacion === 'rechazado') {
+            $fila_clase = 'rechazado';
+        }
+		
+		if ($estado_aprobacion === '') {
+		 $estado_aprobacion = 'no_revisado';
+		}
+    
+        // Agrega un enlace para ver el preview o editar la nota
+        echo '<tr class="' . $fila_clase . '">';
+        echo '<td class="title column-title has-row-actions column-primary page-title">';
+        echo '<a class "row-title" href="' . esc_url($editor_link) . '" target="_blank">' . get_the_title() . '</a>';
+        echo '</td>';
+        echo '<td>' . get_the_author() . '</td>';
+        echo '<td>' . $fecha_publicacion . '</td>';
+        echo '<td>' . $usuario_aprobador_rechazador . '</td>';
+    
+        // Añadir columna Fecha de Revisión
+        $fecha_revision = get_post_meta($nota_id, '_fecha_revision', true);
+        echo '<td>' . $fecha_revision . '</td>';
+    
+        echo '<td>';
+    
+        // Utilizar radio buttons para seleccionar el estado de aprobación
+        echo '<input type="radio" name="estado_aprobacion[' . $nota_id . ']" value="aprobado" ' . checked($estado_aprobacion, 'aprobado', false) . '> Aprobado';        
+        echo '<input type="radio" name="estado_aprobacion[' . $nota_id . ']" value="no_revisado" ' . checked($estado_aprobacion, 'no_revisado', false) . '> Por revisar';
+        echo '<input type="radio" name="estado_aprobacion[' . $nota_id . ']" value="rechazado" ' . checked($estado_aprobacion, 'rechazado', false) . '> Rechazado';
+    
+        echo '</td>';
+        echo '</tr>';
+    }
+    
+    echo '</tbody>';
+    echo '</table>';
+    
+    // Agregar un único botón "Guardar" para todos los cambios
+    echo '<button style="float:right;" type="submit" name="guardar_estado" value="1">Guardar</button>';
+    echo '</form>';
+    
+    // Procesar el formulario al hacer clic en "Guardar"
+    if (isset($_POST['guardar_estado']) && $_POST['guardar_estado'] == 1) {
+        foreach ($_POST['estado_aprobacion'] as $nota_id => $estado) {
+            $nota_id = intval($nota_id);
+            $estado = sanitize_text_field($estado);
+            update_post_meta($nota_id, '_estado_aprobacion', $estado);
+
+            
+
+            // Agregar la fecha de revisión
+            if ($estado !== 'no_revisado') {
+                update_post_meta($nota_id, '_fecha_revision', current_time('mysql'));
+
+                // Obtener el nombre de usuario del aprobador/rechazador
+                $usuario_aprobador_rechazador = get_userdata(get_current_user_id())->display_name;
+                update_post_meta($nota_id, '_usuario_aprobador_rechazador', $usuario_aprobador_rechazador);
+            }
+        }
+
+        // Después de guardar, redirigir a la misma página para recargarla
+        $current_url = add_query_arg(
+            array(
+                'page' => 'notas-plugin-admin', // Asegúrate de incluir la página
+                'paged' => $_GET['paged'], // Mantén el parámetro de página actual
+                'estado_filtro' => $_GET['estado_filtro'], // Mantén el filtro de estado
+                'autor_filtro' => $_GET['autor_filtro'], // Mantén el filtro de autor
+            )
+        );
+
+        wp_redirect($current_url);
+        exit;
+
+    }
+
+}
+
+function agregar_campo_aprobacion() {
+    add_meta_box('estado-aprobacion', 'Estado de Aprobación', 'mostrar_campo_aprobacion', 'post', 'side', 'high');
+}
+
+add_action('add_meta_boxes', 'agregar_campo_aprobacion');
+
+function mostrar_campo_aprobacion($post) {
+    $estado_aprobacion = get_post_meta($post->ID, '_estado_aprobacion', true);
+    ?>
+    <label for="estado_aprobacion">Estado de Aprobación:</label>
+    <select id="estado_aprobacion" name="estado_aprobacion">
+        <option value="no_revisado">Por revisar</option>
+        <option value="aprobado" <?php selected($estado_aprobacion, 'aprobado'); ?>>Aprobado</option>
+        <option value="rechazado" <?php selected($estado_aprobacion, 'rechazado'); ?>>Rechazado</option>
+    </select>
+    <?php
+}
+
+function guardar_estado_aprobacion($post_id) {
+    if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
+    if (!current_user_can('edit_post', $post_id)) return;
+
+    if (isset($_POST['estado_aprobacion'])) {
+        $estado_aprobacion = sanitize_text_field($_POST['estado_aprobacion']);
+        update_post_meta($post_id, '_estado_aprobacion', $estado_aprobacion);
+
+        if ($estado_aprobacion !== 'no_revisado') {
+            update_post_meta($post_id, '_fecha_revision', current_time('mysql'));
+            $usuario_aprobador_rechazador = get_userdata(get_current_user_id())->display_name;
+            update_post_meta($post_id, '_usuario_aprobador_rechazador', $usuario_aprobador_rechazador);
+        }
+    }
+}
+
+add_action('save_post', 'guardar_estado_aprobacion');
+
+function gestionar_aprobacion_desaprobacion() {
+    if (isset($_POST['nota_id']) && isset($_POST['estado_aprobacion'])) {
+        $nota_id = intval($_POST['nota_id']);
+        $estado = sanitize_text_field($_POST['estado_aprobacion']);
+        update_post_meta($nota_id, '_estado_aprobacion', $estado);
+
+        if ($estado !== 'no_revisado') {
+            update_post_meta($nota_id, '_fecha_revision', current_time('mysql'));
+            $usuario_aprobador_rechazador = get_userdata(get_current_user_id())->display_name;
+            update_post_meta($nota_id, '_usuario_aprobador_rechazador', $usuario_aprobador_rechazador);
+        }
+    }
+}
+
+add_action('admin_init', 'gestionar_aprobacion_desaprobacion');
+
+function enqueue_custom_styles() {
+    wp_enqueue_style('custom-styles', plugin_dir_url(__FILE__) . 'css/custom.css');
+}
+
+add_action('wp_enqueue_scripts', 'enqueue_custom_styles');
